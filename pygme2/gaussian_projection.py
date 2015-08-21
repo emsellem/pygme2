@@ -27,6 +27,9 @@ __version__ = '0.0.1 (14 August 2014)'
 # and the python version from an earlier pygme package version
 # -----------------------------------------------------------
 
+# Default inclination in degrees
+default_inclination = 90.0
+
 def DeprojectGaussian(imax2d, sig2d, q2d, pa, **kwargs) :
     """Deprojection module to deproject 2D Gaussians in 3D.
     This used the Euler angles (viewing angles) as well as the observed 
@@ -73,12 +76,14 @@ def DeprojectGaussian(imax2d, sig2d, q2d, pa, **kwargs) :
     geometry : string. Can be 'oblate', 'prolate' or 'triaxial'. 
           Imposing the geometry on the deprojection. Will thus check if this is 
           compatible with the input parameters.
-    qxz : float
+    qzx : float
           In certain cases (e.g. face -on)
           you need to specify an axis ratio here.
-    qyz : float
+          for sigmaZ / sigmaX
+    qzy : float
           In certain cases (e.g., phi=Pi/2)
           you need to specify an axis ratio here.
+          for sigmaZ / sigmaY
 
     Return
     ------
@@ -86,10 +91,10 @@ def DeprojectGaussian(imax2d, sig2d, q2d, pa, **kwargs) :
           Maximum amplitude of the 3D Gaussian
     sig3d : float
           Sigma (dispersion) of the 3D Gaussian
-    qxz : float
-          Axis ratio (X/Y) of the 3D Gaussian
-    qyz : float
-          Axis ratio (Y/Y) of the 3D Gaussian
+    qzx : float
+          Axis ratio (Z/X) of the 3D Gaussian sigmas
+    qzy : float
+          Axis ratio (Z/Y) of the 3D Gaussian sigmas
     pa : float
           Position Angle of the Gaussian (starting from North=Vertical up axis,
           going positive counter-clockwise). In degrees.
@@ -98,86 +103,94 @@ def DeprojectGaussian(imax2d, sig2d, q2d, pa, **kwargs) :
           is needed.
           Viewing Angles (Phi, Theta, Psi). All in degrees. 
           Default is [0.,90.,0.] (edge-on).
-    axi : boolean
-          Axisymmetric or not (qxz = qyz)
     """
+
+    # Verbose or not
+    verbose = kwargs.get("verbose", False)
 
     # Defining the error output if something goes wrong
     error_output = 0., 0., 0., 0., 0., 0., False
 
     # Check which geometry we wish
-    geometries = kwargs.get("euler_angles", 'oblate')
+    geometries = ['oblate', 'prolate', 'triaxial']
+    geometry= kwargs.get("geometry", 'oblate')
     if geometry not in geometries:
         print("ERROR: you should choose a geometry in the following list: ", 
                 geometries)
         return error_output
 
     # Euler Angles transformed in radian and checked
+    inclination = np.deg2rad(np.float(kwargs.get('inclination', default_inclination)))
     if 'inclination' in kwargs :
-        inclination = np.degtorad(np.float(kwargs.get('inclination')))
-        euler_angles = [0., inclination, 0.]
         if verbose:
             print("Found an inclination. Other Euler angles will be ignored")
+        euler_angles = [0., inclination, 0.]
     elif 'euler_angles' in kwargs : 
-        euler_angles = np.degtorad(np.float(kwargs.get('euler_angles', 
-                                   [0., 90., 0.,])))
+        euler_angles = np.deg2rad(np.float(kwargs.get('euler_angles', 
+                                   [0., default_inclination, 0.,])))
         if size(euler_angles) != 3 :
             print("ERROR: euler_angles should always" 
                     "have 3 values (tuple or array)")
             return error_output
         inclination = euler_angles[1]
     else :
-        print("ERROR: you should set either inclination or euler_angles.")
-        return error_output
+        if verbose :
+            print("WARNING: no set inclination or euler_angles.")
+            print("      Using a default deprojection for the edge-on case.")
+            print("      Inclination = 90 degrees.")
+        euler_angles = [0., inclination, 0.]
 
-    # Geometry of the system for deprojection
-    geometry = kwargs.get("geometry", 'oblate')
+    # transferring into the angles names
+    [phi, theta, psi] = euler_angles
 
     # Optional parameters in case this is useful
     # By default, set to 1.
-    qxz = kwargs.get("qxz", 1.0)
-    qyz = kwargs.get("qyz", 1.0)
+    qzx = kwargs.get("qzx", 1.0)
+    qzy = kwargs.get("qzy", 1.0)
 
     if verbose :
         print("Geometry will be ", geometry)
 
     # OBLATE Geometry --------------------------------------------------------
     if geometry == 'oblate' :
-        if euler_angles[2] != 0.  or euler_angles[0] != 0 :
+        if psi != 0.  or phi != 0 :
             if verbose :
                 print("WARNING: second and third euler angle"
                         " - Phi and Psi - will be ignored")
         #-------------------------------------------
         # FACE-ON case
-        if inclination == 0. :
+        if theta == 0. :
             if q2d != 1 :
                 print("ERROR: cannot deproject this model"
                     "as component %d does not have axis ratio of 1!")
             if verbose:
                 print("WARNING: this is a face-on case"
-                        "An arbitrary value for qxz")
+                        "An arbitrary value for qzx")
         #-------------------------------------------
         # EDGE-ON case
-        elif inclination == np.pi/2. :
+        elif theta == np.pi/2. :
             if verbose :
                 print "Edge-on deprojection\n"
-            qxz = q2d
+            qzx = q2d
         #-------------------------------------------
         else :
-            cosi2 = cos(inclination) * cos(inclination)
-            sini2 = sin(inclination) * sin(inclination)
+            cosi2 = cos(theta) * cos(theta)
+            sini2 = sin(theta) * sin(theta)
             if cosi2 > q2d**2 :
                 if verbose :
-                    maxangle = np.arccos(q2d)
-                    print("ERROR: cannot deproject the component %d. Max angle is %f" %(i+1, maxangle*180./np.pi))
+                    maxangle = np.rad2deg(np.arccos(q2d))
+                    print("ERROR: cannot deproject this Gaussian."
+                            " Max angle is %f Degrees" %(maxangle))
                     return error_output
-            qxz = np.sqrt((q2d**2 - cosi2) / sini2)
+            qzx = np.sqrt((q2d**2 - cosi2) / sini2)
 
-        qyz = qxz
+        qzy = qzx
         sig3d = sig2d
-        imax3d = imax2d *  q2d / (np.sqrt(2. * np.pi) * qxz * sig2d)
+        imax3d = imax2d *  q2d / (np.sqrt(2. * np.pi) * qzx * sig2d)
         
     elif prolate :
         pass
     elif triaxial :
         pass
+
+    return imax3d, sig3d, qzx, qzy, pa, np.rad2deg(euler_angles)

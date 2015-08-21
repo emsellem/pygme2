@@ -186,29 +186,24 @@ class MGEGaussian3D(Model) :
     inputs = ("x", "y", "z")
     outputs = ("G3D",)
 
-    Imax3d = Parameter(default=1.0)
+    imax3d = Parameter(default=1.0)
     sig3d = Parameter(default=1.0)
-    qxz = Parameter(default=1.0)
-    qyz = Parameter(default=1.0)
+    qzx = Parameter(default=1.0)
+    qzy = Parameter(default=1.0)
     pa = Parameter(default=-90.)
     phi = Parameter(default=0.)
-    xcenter3d = Parameter(default=0.0)
-    ycenter3d = Parameter(default=0.0)
-    zcenter3d = Parameter(default=0.0)
+    xcentre3d = Parameter(default=0.0)
+    ycentre3d = Parameter(default=0.0)
+    zcentre3d = Parameter(default=0.0)
 
     @staticmethod
-    def evaluate(x, y, z) :
+    def evaluate(x, y, z, imax3d, sig3d, qzx, qzy, pa, phi, 
+            xcentre3d, ycentre3d, zcentre3d) :
         return astropy_models.Gaussian3D.evaluate(x, y, z, amplitude=imax3d, 
-                x_mean=xcenter3d, y_mean=ycenter3d, z_mean=zcenter3d,
-                x_stddev=sig3d, y_stddev=sig3d * qxz, z_stddev=sig3d * qyz, 
+                x_mean=xcentre3d, y_mean=ycentre3d, z_mean=zcentre3d,
+                x_stddev=sig3d, y_stddev=sig3d * qzx / qzy, z_stddev=sig3d * qzx, 
                 theta=pa, phi=phi)
 
-#     def __getattr__(self, key):
-#         if key.startswith('q'):
-#             return getattr(self, key[1] + '_sttdev') 
-#                 / getattr(self, key[2] + '_sttdev')
-#         else:
-#             super(MGE_Gaussian3D, self).__getattribute__(self, key)
 
 class Base3DModel(object) :
     """Base 3D Model for MGE
@@ -227,8 +222,8 @@ class Base3DModel(object) :
         imax3d = kwargs.get("imax3d", 
                 np.ones(self.n_gaussians, dtype=float32))
         sig3d = kwargs.get("sig3d", np.ones_like(imax3d))
-        qxz = kwargs.get("qxz",  np.ones_like(imax3d))
-        qyz = kwargs.get("qyz",  np.ones_like(imax3d))
+        qzx = kwargs.get("qzx",  np.ones_like(imax3d))
+        qzy = kwargs.get("qzy",  np.ones_like(imax3d))
         pa = kwargs.get("pa",  np.ones_like(imax3d))
         phi = kwargs.get("phi",  np.ones_like(imax3d))
         xcentre3d = kwargs.get("xcentre3d",  np.ones_like(imax3d))
@@ -239,11 +234,11 @@ class Base3DModel(object) :
         for i in range(n_gaussians) :
             if self.model3d is None :
                 self.model3d = MGEGaussian3D(imax3d[i],
-                        sig3d[i], qxz[i], qyz[i], pa[i], phi[i],
+                        sig3d[i], qzx[i], qzy[i], pa[i], phi[i],
                         xcentre3d[i], ycentre3d[i], zcentre3d[i])
             else :
                 self.model3d += MGEGaussian3D(imax2d[i],
-                        sig3d[i], qxz[i], qyz[i], pa[i], phi[i],
+                        sig3d[i], qzx[i], qzy[i], pa[i], phi[i],
                         xcentre3d[i], ycentre3d[i], zcentre3d[i])
 
         self.model3d.n_gaussians = n_gaussians
@@ -395,23 +390,23 @@ class BaseMGEModel(object) :
          self.model3d.parameters[1::9] = value
     # -------------------------------------
     @property 
-    def qxz(self) :
+    def qzx(self) :
         """Axis ratio (X/Y) of the 3D Gaussians
         """
         return self.model3d.parameters[2::9]
 
-    @qxz.setter
-    def qxz(self, value) :
+    @qzx.setter
+    def qzx(self, value) :
          self.model3d.parameters[2::9] = value
     # -------------------------------------
     @property 
-    def qyz(self) :
+    def qzy(self) :
         """Axis ratio (X/Z) of the 3D Gaussians
         """
         return self.model3d.parameters[3::9]
 
-    @qyz.setter
-    def qyz(self, value) :
+    @qzy.setter
+    def qzy(self, value) :
          self.model3d.parameters[3::9] = value
     # -------------------------------------
     @property 
