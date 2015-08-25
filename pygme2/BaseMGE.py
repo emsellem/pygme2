@@ -25,11 +25,18 @@ try:
 except ImportError:
     raise Exception("astropy is required for this module")
 
-__version__ = '0.0.1 (14 August 2014)'
+from gaussian_projection import _rotation_matrix
+from gaussian_projection import _check_viewing_angles
+from gaussian_projection import _check_3D_axisratios
+from gaussian_projection import _check_consistency_size
+
+__version__ = '0.0.2 (25 August 2014)'
+#__version__ = '0.0.1 (14 August 2014)'
 # ==========================================================
 # Version 0.0.1: EE - First drafted structure
+# Version 0.0.2: EE - Converging on the structure
 # ==========================================================
-# This is a new version of an old package
+# This is a full rewriting of an old package
 # The restructuring was made to take advantage of the model
 # structure from astropy.
 #
@@ -62,7 +69,7 @@ class MGEGaussian1D(Model) :
     @staticmethod
     def evaluate(x, imax1d, sig1d, xcentre1d) :
         return astropy_models.Gaussian1D.evaluate(x,
-                amplitude=imax1d, mean=xcentre1d, stddev=sig1d)
+                amplitude=imax1d, stddev=sig1d, mean=xcentre1d)
 
 
 # ========================================
@@ -91,25 +98,118 @@ class MGEGaussian2D(Model) :
     xcentre2d = Parameter(default=0.)
     ycentre2d = Parameter(default=0.)
 
-    def evaluate(x, y, imax2d, sig2d, q2d, pa, xcentre2d=0.0, ycentre2d=0.0) :
-        theta = np.deg2rad(pa + np.pi / 2.)
-        cost2 = np.cos(theta) ** 2
-        sint2 = np.sin(theta) ** 2
-        sin2t = np.sin(2. * theta)
-        xstd2 = sig2d ** 2
-        ystd2 = (sig2d * q2d) ** 2
-        xdiff = x - xcentre2d
-        ydiff = y - ycentre2d
-        a = 0.5 * ((cost2 / xstd2) + (sint2 / ystd2))
-        b = 0.5 * ((sin2t / xstd2) - (sin2t / ystd2))
-        c = 0.5 * ((sint2 / xstd2) + (cost2 / ystd2))
-        return amplitude * np.exp(-((a * xdiff ** 2) + (b * xdiff * ydiff) +
-                                    (c * ydiff ** 2)))    
+#    def evaluate(x, y, imax2d, sig2d, q2d, pa, xcentre2d=0.0, ycentre2d=0.0) :
+#        pa_x = np.deg2rad(pa + 90.0)
+#        cost2 = np.cos(pa_x) ** 2
+#        sint2 = np.sin(pa_x) ** 2
+#        sin2t = np.sin(2. * pa_x)
+#        xstd2 = sig2d ** 2
+#        ystd2 = (sig2d * q2d) ** 2
+#        xdiff = x - xcentre2d
+#        ydiff = y - ycentre2d
+#        a = 0.5 * ((cost2 / xstd2) + (sint2 / ystd2))
+#        b = 0.5 * ((sin2t / xstd2) - (sin2t / ystd2))
+#        c = 0.5 * ((sint2 / xstd2) + (cost2 / ystd2))
+#        return amplitude * np.exp(-((a * xdiff ** 2) + (b * xdiff * ydiff) +
+#                                    (c * ydiff ** 2)))    
     @staticmethod
     def evaluate(x, y, imax2d, sig2d, q2d, pa, xcentre2d, ycentre2d) :
         return astropy_models.Gaussian2D.evaluate(x, y, 
                 amplitude=imax2d, x_stddev=sig2d, y_stddev=sig2d * q2d, 
-                theta=pa, x_mean=xcentre2d, y_mean=ycentre2d)
+                theta=np.deg2rad(pa+90.0), x_mean=xcentre2d, y_mean=ycentre2d)
+
+
+class Base2DModel(object) :
+    """Base 2D Model for MGE
+
+    Set of n_gaussians 2D Gaussians
+
+    Parameters
+    ----------
+
+    n_gaussians : int
+                number of Gaussians
+    imax2d: array of floats
+    sig2d: array of floats
+    q2d: array of floats
+         Amplitudes, sigmas and axis ratios of the 2D Gaussians
+
+    pa : float
+        Position angle of the Gaussians
+
+    xcentre2d : float
+    ycentre2d : float
+          Centre of the Gaussians in observed coordinates
+
+    Return 
+    ------
+    A Base 2D model class with n_gaussians 2D Gaussians
+    This is a composite model from MGEGaussian2D.
+    """
+
+    def __init__(self, imax2d, sig2d, q2d, **kwargs) :
+        """Initialise the set of 2D Gaussians
+        """
+
+        # All the following parameters have getters/setters
+        # As they are set to be views of the model3d.parameters array
+        imax2d = np.atleast_1d(np.asarray(imax2d, dtype=np.float32))
+
+        n_gaussians = size(imax2d)
+        sig2d =  np.atleast_1d(np.asarray(sig2d, dtype=np.float32))
+        q2d =  np.atleast_1d(np.asarray(q2d, dtype=np.float32))
+
+        if any(q2d == 0) or any(sig2d == 0) :
+            print("ERROR: sigma's and q's should be non-zeros")
+
+        if not _check_consistency_size([imax2d, sig2d, q2d]) :
+            print("ERROR: not all input arrays (imax, sigma, q)"
+                  " have the same size")
+
+        # All the following parameters have getters/setters
+        # As they are set to be views of the model2d.parameters array
+        pa = _read_resize_arg("pa", n_gaussians, -90., **kwargs)
+        xcentre2d = _read_resize_arg("xcentre2d", n_gaussians, 0., **kwargs)
+        ycentre2d = _read_resize_arg("ycentre2d", n_gaussians, 0., **kwargs)
+
+        self.model2d =  None
+        for i in range(n_gaussians) :
+            newmodel2d = MGEGaussian2D(imax2d[i],
+                    sig2d[i], q2d[i], pa[i], xcentre2d[i], ycentre2d[i])
+            if self.model2d is None :
+                self.model2d = newmodel2d
+            else :
+                self.model2d += newmodel2d
+
+        self.model2d.n_gaussians = n_gaussians
+
+    def evaluate(self, x, y) :
+        return self.model2d(x,y)
+
+    def deproject(self, **kwargs) :
+        """
+        Parameters
+        ----------
+        geometry : string
+                 One of the three 'oblate', 'prolate' or 'triaxial'
+                 Default is 'oblate'.
+        euler_angles: array of 3 floats
+                 Three viewing angles (in degrees). Default is [0, 90, 0].
+        Return
+        ------
+        model3d : a Base3DModel, including the 3D Gaussians
+        """
+        from gaussian_projection import DeprojectGaussian2D
+
+        model3d = None
+        for model2d in self.model2d :
+            newmodel3d = DeprojectGaussian2D(model2d, **kwargs)
+            if model3d is None :
+                model3d = newmodel3d
+            else :
+                model3d += newmodel3d
+
+        return model3d
 
 
 # ========================================
@@ -131,7 +231,15 @@ class Gaussian3D(Model) :
     x_stddev : float
     y_stddev : float
     z_stddev : float
-             Sigma in x, y  and z for the Gaussians
+          Sigma in x, y  and z for the Gaussians
+    phi : float
+    theta : float
+    psi : float
+          Euler angles (in radians)
+
+    Return
+    ------
+    An astropy.modeling compatible class for a 3D Gaussian
     """
     amplitude = Parameter()
     x_mean = Parameter()
@@ -140,12 +248,13 @@ class Gaussian3D(Model) :
     x_stddev = Parameter()
     y_stddev = Parameter()
     z_stddev = Parameter()
+    psi = Parameter()
     theta = Parameter()
     phi = Parameter()
 
     def __init__(self, amplitude, x_mean=0.0, y_mean=0.0, z_mean=0.0, 
             x_stddev=1.0, y_stddev=1.0, z_stddev=1.0, 
-            theta=0.0, phi=0.0, **kwargs):
+            psi=0.0, theta=np.pi/2., phi=0.0, **kwargs):
 
         self.x_mean = x_mean
         self.y_mean = y_mean
@@ -153,35 +262,75 @@ class Gaussian3D(Model) :
         self.x_sttdev = x_sttdev
         self.y_sttdev = y_sttdev
         self.z_sttdev = z_sttdev
+        self.psi = psi
         self.theta = theta
         self.phi = phi
 
     @staticmethod
     def evaluate(x, y, z, amplitude, x_mean, y_mean, z_mean, 
-                 x_stddev, y_stddev, z_stddev, theta, phi) :
+                 x_stddev, y_stddev, z_stddev, psi, theta, phi) :
         """Three dimensional Gaussian function"""
 
-        xdiff = x - x_mean
-        ydiff = y - y_mean
-        zdiff = z - z_mean
-        return amplitude * np.exp(-0.5 * ((xdiff / x_stddev)**2 + 
-                    (ydiff / y_stddev)**2 + (zdiff / z_stddev)**2))
+        # Observed Position Angle of each Gaussian is PA
+        # The angle for the deprojection is Psi.
+        # Hence to have deprojected aligned axes after deprojection
+        # we need to have Psi = PA + cte
+        # In any cases, the evaluation here is done for each Gaussian
+        # with its own Psi angle
+        # Rotation is done first with Psi, then Theta, then Phi
+
+        # First convert into radians
+        [psi_rad, theta_rad, phi_rad] = np.deg2rad([psi, theta, psi])
+        # Then compute the total rotation matrix
+        M_euler = []
+        M_euler.append(_rotation_matrix(psi_rad, 'z'))
+        M_euler.append(_rotation_matrix(theta_rad, 'x'))
+        M_euler.append(_rotation_matrix(phi_rad, 'z'))
+        M_rot = reduce(np.dot, M_euler[::-1])
+        # Then apply it on the coordinates
+        [xr, yr, zr] = M_rot.dot([x - xmean, y - ymean, z - z_mean])
+
+        return amplitude * np.exp(-0.5 * ((xr / x_stddev)**2 + 
+                    (yr / y_stddev)**2 + (zr / z_stddev)**2))
+
 
 # ========================================
 # Gaussian 3D model
 # Inherited from self-built astropy model
 # ----------------------------------------
 class MGEGaussian3D(Model) :
-    """ MGE 2D Gaussian model using astropy
+    """ MGE 3D Gaussian model class using astropy
 
     Parameters
     ----------
     **kwargs : kwargs
          Set of free arguments given to MGE_Gaussian2D
 
+    Input
+    -----
+    imax3d : float
+    sig3d : float
+    qzx : float
+    qzy : float
+          Input amplitude, sigma and axis ratios
+    phi : float
+    theta : float
+    psi : float
+          Input Euler angles (viewing angles)
+          This corresponds to axes X, Y, and X
+          for the principal axes of the 3D Gaussians
+          to be transformed via rotations into X', Y', Z':
+             1- around the Oz axis (Psi)
+             2- around the Ox axis (Theta)
+             3- around the Oz axis (Phi)
+    xcentre3d : float
+    ycentre3d : float
+    zcentre3d : float
+          Centre of the Gaussians in observed coordinates
+
     Return
     ------
-    MGE_Gaussian2D
+    A 3D MGE Gaussian model class
     """
     inputs = ("x", "y", "z")
     outputs = ("G3D",)
@@ -190,92 +339,120 @@ class MGEGaussian3D(Model) :
     sig3d = Parameter(default=1.0)
     qzx = Parameter(default=1.0)
     qzy = Parameter(default=1.0)
-    pa = Parameter(default=-90.)
+    psi = Parameter(default=0.)
+    theta = Parameter(default=90.)
     phi = Parameter(default=0.)
     xcentre3d = Parameter(default=0.0)
     ycentre3d = Parameter(default=0.0)
     zcentre3d = Parameter(default=0.0)
 
     @staticmethod
-    def evaluate(x, y, z, imax3d, sig3d, qzx, qzy, pa, phi, 
-            xcentre3d, ycentre3d, zcentre3d) :
+    def evaluate(x, y, z, imax3d, sig3d, qzx, qzy, 
+            psi, theta, phi, xcentre3d, ycentre3d, zcentre3d) :
         return astropy_models.Gaussian3D.evaluate(x, y, z, amplitude=imax3d, 
-                x_mean=xcentre3d, y_mean=ycentre3d, z_mean=zcentre3d,
                 x_stddev=sig3d, y_stddev=sig3d * qzx / qzy, z_stddev=sig3d * qzx, 
-                theta=pa, phi=phi)
+                psi=psi, theta=theta, phi=phi,
+                x_mean=xcentre3d, y_mean=ycentre3d, z_mean=zcentre3d)
 
 
 class Base3DModel(object) :
     """Base 3D Model for MGE
 
-    Set of 3D Gaussians
+    Set of n_gaussians 3D Gaussians
+
+    Parameters
+    ----------
+
+    n_gaussians : int
+                number of Gaussians
+    imax3d: array of floats
+    sig3d: array of floats
+    qzx: array of floats
+    qzy: array of floats
+         Amplitudes, sigmas and axis ratios of the 3D Gaussians
+
+    psi : float
+    theta : float
+    phi : float
+        Euler angles (in degrees) of the 3D Gaussians
+
+    xcentre3d : float
+    ycentre3d : float
+    zcentre3d : float
+          Centre of the Gaussians in observed coordinates
+
+    Return 
+    ------
+    A Base 3D model class with n_gaussians 3D Gaussians
+    This is a composite model from MGEGaussian3D.
     """
-    def __init__(self, *kwargs) :
+    def __init__(self, imax3d, sig3d, qzx, qzy, **kwargs) :
         """Initialise the set of 3D Gaussians
         """
 
-        # Input Parameters
-        n_gaussians = np.int(kwargs.get("n_Gaussians", 1))
-
         # All the following parameters have getters/setters
         # As they are set to be views of the model3d.parameters array
-        imax3d = kwargs.get("imax3d", 
-                np.ones(self.n_gaussians, dtype=float32))
-        sig3d = kwargs.get("sig3d", np.ones_like(imax3d))
-        qzx = kwargs.get("qzx",  np.ones_like(imax3d))
-        qzy = kwargs.get("qzy",  np.ones_like(imax3d))
-        pa = kwargs.get("pa",  np.ones_like(imax3d))
-        phi = kwargs.get("phi",  np.ones_like(imax3d))
-        xcentre3d = kwargs.get("xcentre3d",  np.ones_like(imax3d))
-        ycentre3d = kwargs.get("ycentre3d",  np.ones_like(imax3d))
-        zcentre3d = kwargs.get("zcentre3d",  np.ones_like(imax3d))
+        imax3d = np.atleast_1d(np.ndarray(imax3d, dtype=np.float32))
+
+        n_gaussians = size(imax3d)
+        sig3d = np.atleast_1d(np.ndarray(sig3d, dtype=np.float32))
+        qzx = np.atleast_1d(np.ndarray(qzx, dtype=np.float32))
+        qzy = np.atleast_1d(np.ndarray(qzy, dtype=np.float32))
+
+        if any(qzx == 0) or any(qzy == 0) or any(sig3d == 0) :
+            print("ERROR: sigma's and q's should be non-zeros")
+
+        if not check_consistency_size([imax3d, sig3d, qzx, qzy]) :
+            print("ERROR: not all input arrays (imax, sigma, q)"
+                  " have the same size")
+
+        psi = _read_resize_arg(kwargs, "psi", n_gaussians, 0.)
+        theta = _read_resize_arg(kwargs, "theta", n_gaussians, 90.0)
+        phi = _read_resize_arg(kwargs, "phi", n_gaussians, 0.)
+        xcentre3d = _read_resize_arg(kwargs, "xcentre3d", n_gaussians, 0.)
+        ycentre3d = _read_resize_arg(kwargs, "ycentre3d", n_gaussians, 0.)
+        zcentre3d = _read_resize_arg(kwargs, "zcentre3d", n_gaussians, 0.)
 
         self.model3d = None
         for i in range(n_gaussians) :
+            newmodel3d = MGEGaussian3D(imax3d[i],
+                           sig3d[i], qzx[i], qzy[i], psi[i], theta[i], phi[i],
+                           xcentre3d[i], ycentre3d[i], zcentre3d[i])
             if self.model3d is None :
-                self.model3d = MGEGaussian3D(imax3d[i],
-                        sig3d[i], qzx[i], qzy[i], pa[i], phi[i],
-                        xcentre3d[i], ycentre3d[i], zcentre3d[i])
+                self.model3d = newmodel3d
             else :
-                self.model3d += MGEGaussian3D(imax2d[i],
-                        sig3d[i], qzx[i], qzy[i], pa[i], phi[i],
-                        xcentre3d[i], ycentre3d[i], zcentre3d[i])
+                self.model3d += newmodel3d
 
         self.model3d.n_gaussians = n_gaussians
 
-class Base2DModel(object) :
-    """ Base 2D model for MGE
+    def evaluate(self, x, y, z) :
+        return self.model3d(x, y, z)
 
-    Set of 2D Gaussians
+    def project(self, geometry='oblate', euler_angles=[0, 90., 0.]) :
+        pass
+
+def _read_resize_arg(arg, sizearray, defaultvalue, **kwargs) :
+    """Read and resize the input arrays
+    If the argument is present in the kwargs list, then check if it
+    is just 1 number, and in that case resize to an array of sizearray.
+
+    Parameters
+    ----------
+    **kwargs: list of arguments
+    arg: string
+         Argument to consider in kwargs
+    sizearray : int
+         Size of the array
+    defaultvalue : float
+         Default value to impose if not given
+
+    Return
+    ------
+    variable: an array with size, sizearray
     """
-
-    def __init__(self, **kwargs) :
-        """Initialise the set of 2D Gaussians
-        """
-
-        # Input Parameters
-        n_gaussians = np.int(kwargs.get("n_Gaussians", 1))
-
-        # All the following parameters have getters/setters
-        # As they are set to be views of the model2d.parameters array
-        imax2d = kwargs.get("imax2d", 
-                np.ones(self.n_gaussians, dtype=float32))
-        sig2d = kwargs.get("sig2d", np.ones_like(imax2d))
-        q2d = kwargs.get("q2d",  np.ones_like(imax2d))
-        pa = kwargs.get("pa",  np.ones_like(imax2d))
-        xcentre2d = kwargs.get("xcentre2d",  np.ones_like(imax2d))
-        ycentre2d = kwargs.get("ycentre2d",  np.ones_like(imax2d))
-
-        self.model2d = None
-        for i in range(n_gaussians) :
-            if self.model2d is None :
-                self.model2d = MGEGaussian2D(imax2d[i],
-                        sig2d[i], q2d[i], pa[i], xcentre2d[i], ycentre2d[i])
-            else :
-                self.model2d += MGEGaussian2D(imax2d[i],
-                        sig2d[i], q2d[i], pa[i], xcentre2d[i], ycentre2d[i])
-
-        self.model2d.n_gaussians = n_gaussians
+    variable = kwargs.get(arg, np.zeros(sizearray, dtype=np.float32)+defaultvalue)
+    if size(variable) == 1 : return resize(variable, sizearray)
+    else : return variable
 
 class BaseMGEModel(object) :
     """ MGE model 
@@ -285,13 +462,27 @@ class BaseMGEModel(object) :
     associated 3D Gaussians, using the viewing Euler Angles
     """
 
-    def __init__(self, **kwargs) :
+    def __init__(self, geometry='oblate', euler_angles=None, inclination=None, 
+        verbose=False, **kwargs) :
         """Initialise the MGE model
-        """
-        # Input Parameters
-        self.n_gaussians = np.int(kwargs.get("n_Gaussians", 1))
 
-        # Now setting the 2D Gaussians
+        Set up the geometry and euler_angles, and provide the input 2D model. 
+        That model is then deprojected into a 3D MGE model using the input
+        geometry and euler_angles.
+        """
+        from gaussian_projection import _check_viewing_angles, _check_3D_axisratios
+
+        # Input Parameters
+        self.geometry = geometry
+        self.euler_angles = _check_viewing_angles(euler_angles, inclination, verbose)
+
+        qzx = kwargs.get("qzx", None)
+        qzy = kwargs.get("qzy", None)
+        qxy = kwargs.get("qxy", None)
+        self._input_qzx, self._input_qzy, self._input_qxy = \
+                _check_3D_axisratios(qzx, qzy, qxy, verbose) 
+
+        # Getting the 2D model - Gaussians
         self.model2d = Base2DModel(**kwargs).model2d
 
     # =================================================
@@ -343,24 +534,24 @@ class BaseMGEModel(object) :
     # -------------------------------------
 
     @property 
-    def xcentre(self) :
+    def xcentre2d(self) :
         """Amplitudes of the 2D Gaussians
         """
         return self.model2d.parameters[4::6]
 
-    @xcentre.setter
-    def xcentre(self, value) :
+    @xcentre2d.setter
+    def xcentre2d(self, value) :
          self.model2d.parameters[4::6] = value
     # -------------------------------------
 
     @property 
-    def ycentre(self) :
+    def ycentre2d(self) :
         """Amplitudes of the 2D Gaussians
         """
         return self.model2d.parameters[5::6]
 
-    @ycentre.setter
-    def ycentre(self, value) :
+    @ycentre2d.setter
+    def ycentre2d(self, value) :
          self.model2d.parameters[5::6] = value
     # --------------------------------------------------
     # =================================================
@@ -430,33 +621,33 @@ class BaseMGEModel(object) :
          self.model3d.parameters[5::9] = value
     # -------------------------------------
     @property 
-    def xcentre(self) :
+    def xcentre3d(self) :
         """Amplitudes of the 3D Gaussians
         """
         return self.model3d.parameters[6::9]
 
-    @xcentre.setter
-    def xcentre(self, value) :
+    @xcentre3d.setter
+    def xcentre3d(self, value) :
          self.model3d.parameters[6::9] = value
     # -------------------------------------
     @property 
-    def ycentre(self) :
+    def ycentre3d(self) :
         """Amplitudes of the 3D Gaussians
         """
         return self.model3d.parameters[7::9]
 
-    @ycentre.setter
-    def ycentre(self, value) :
+    @ycentre3d.setter
+    def ycentre3d(self, value) :
          self.model3d.parameters[7::9] = value
     # -------------------------------------
     @property 
-    def zcentre(self) :
+    def zcentre3d(self) :
         """Amplitudes of the 3D Gaussians
         """
         return self.model3d.parameters[8::9]
 
-    @zcentre.setter
-    def zcentre(self, value) :
+    @zcentre3d.setter
+    def zcentre3d(self, value) :
          self.model3d.parameters[8::9] = value
     # -------------------------------------
     @property
@@ -470,5 +661,31 @@ class BaseMGEModel(object) :
     def inclination(self, value) :
         if value is not None :
             self.euler_angles[1] = value
+    # --------------------------------------------------
+    @property
+    def model2d(self) :
+        """Model 2D Gaussians
+        """
+        # Now setting the 2D Gaussians
+        return self._model2d
+
+    @model2d.setter
+    def model2d(self, value) :
+        self._model2d = value
+        base3d = self._model2d.deproject(self.geometry, self.euler_angles)
+        self._model3d = base3d.model3d
+
+    @property
+    def model3d(self) :
+        """Model 3D Gaussians
+        """
+        # Now setting the 2D Gaussians
+        return self._model3d
+
+    @model3d.setter
+    def model3d(self, value) :
+        self._model3d = value
+        base2d = self._model3d.project(self.geometry, self.euler_angles)
+        self._model2d = base2d.model2d
     # --------------------------------------------------
 
