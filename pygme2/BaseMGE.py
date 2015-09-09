@@ -46,7 +46,7 @@ __version__ = '0.0.2 (25 August 2014)'
 # Gaussian 1D model
 # Inherited from astropy
 # ----------------------------------------
-class MGEGaussian1D(Model) :
+class BaseGaussian1D(Model) :
     """ MGE 1D Gaussian model using astropy
 
     Parameters
@@ -71,12 +71,71 @@ class MGEGaussian1D(Model) :
         return astropy_models.Gaussian1D.evaluate(x,
                 amplitude=imax1d, stddev=sig1d, mean=xcentre1d)
 
+class BaseMultiGaussian1D(object) :
+    """Base Multi 1D Gaussian 
+
+    Set of n_gaussians 1D Gaussians
+
+    Parameters
+    ----------
+
+    n_gaussians : int
+                number of Gaussians
+    imax1d: array of floats
+    sig1d: array of floats
+         Amplitudes, sigmas of the 1D Gaussians
+
+    xcentre1d : float
+          Centre of the Gaussians in observed coordinates
+
+    Return 
+    ------
+    A Base 1D model class with n_gaussians 1D Gaussians
+    This is a composite model from BaseGaussian1D.
+    """
+
+    def __init__(self, imax1d, sig1d, **kwargs) :
+        """Initialise the set of 1D Gaussians
+        """
+
+        # All the following parameters have getters/setters
+        # As they are set to be views of the model3d.parameters array
+        imax1d = np.atleast_1d(np.asarray(imax1d, dtype=np.float32))
+
+        n_gaussians = size(imax1d)
+        sig2d =  np.atleast_1d(np.asarray(sig1d, dtype=np.float32))
+
+        if any(sig1d == 0) :
+            print("ERROR: sigma's should be non-zeros")
+
+        if not _check_consistency_size([imax1d, sig1d]) :
+            print("ERROR: not all input arrays (imax, sigma)"
+                  " have the same size")
+
+        # All the following parameters have getters/setters
+        # As they are set to be views of the model2d.parameters array
+        xcentre1d = _read_resize_arg("xcentre1d", n_gaussians, 0., **kwargs)
+
+        self.model1d =  None
+        for i in range(n_gaussians) :
+            newmodel1d = BaseGaussian1D(imax1d[i],
+                    sig2d[i], xcentre1d[i])
+            if self.model2d is None :
+                self.model2d = newmodel1d
+            else :
+                self.model2d += newmodel1d
+
+        self.model1d.n_gaussians = n_gaussians
+
+    def evaluate(self, x, y) :
+        return self.model1d(x,y)
+
 
 # ========================================
 # Gaussian 2D model
 # Inherited from astropy
 # ----------------------------------------
-class MGEGaussian2D(Model) :
+class BaseGaussian2D(Model) :
     """ MGE 2D Gaussian model using astropy
 
     Parameters
@@ -119,7 +178,7 @@ class MGEGaussian2D(Model) :
                 theta=np.deg2rad(pa+90.0), x_mean=xcentre2d, y_mean=ycentre2d)
 
 
-class Base2DModel(object) :
+class BaseMultiGaussian2D(object) :
     """Base 2D Model for MGE
 
     Set of n_gaussians 2D Gaussians
@@ -144,7 +203,7 @@ class Base2DModel(object) :
     Return 
     ------
     A Base 2D model class with n_gaussians 2D Gaussians
-    This is a composite model from MGEGaussian2D.
+    This is a composite model from BaseGaussian2D.
     """
 
     def __init__(self, imax2d, sig2d, q2d, **kwargs) :
@@ -174,7 +233,7 @@ class Base2DModel(object) :
 
         self.model2d =  None
         for i in range(n_gaussians) :
-            newmodel2d = MGEGaussian2D(imax2d[i],
+            newmodel2d = BaseGaussian2D(imax2d[i],
                     sig2d[i], q2d[i], pa[i], xcentre2d[i], ycentre2d[i])
             if self.model2d is None :
                 self.model2d = newmodel2d
@@ -298,7 +357,7 @@ class Gaussian3D(Model) :
 # Gaussian 3D model
 # Inherited from self-built astropy model
 # ----------------------------------------
-class MGEGaussian3D(Model) :
+class BaseGaussian3D(Model) :
     """ MGE 3D Gaussian model class using astropy
 
     Parameters
@@ -355,7 +414,7 @@ class MGEGaussian3D(Model) :
                 x_mean=xcentre3d, y_mean=ycentre3d, z_mean=zcentre3d)
 
 
-class Base3DModel(object) :
+class BaseMultiGaussian3D(object) :
     """Base 3D Model for MGE
 
     Set of n_gaussians 3D Gaussians
@@ -483,7 +542,7 @@ class BaseMGEModel(object) :
                 _check_3D_axisratios(qzx, qzy, qxy, verbose) 
 
         # Getting the 2D model - Gaussians
-        self.model2d = Base2DModel(**kwargs).model2d
+        self.model2d = BaseMultiGaussian2D(**kwargs).model2d
 
     # =================================================
     #                  2D model parameters
