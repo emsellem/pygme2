@@ -94,33 +94,33 @@ Note (Emsellem): this is now also solved using lmfit which is based on leastsq f
 ## Returns a function which does the calculation, given a set of parameters,
 ## of the sum of Gaussians, the I being the maximum intensities (not normed)
 # ==========================================================================
-def n_centred_onedgaussian_Imax(pars, I=None, sigma=None):
-    """
-    Returns a function that provides the sum 
-    over N 1D gaussians, where N is the length of
-    I,sigma *OR* N = len(pars) / 2
-
-    The background "height" is assumed to be zero (you must "baseline" your
-    spectrum before fitting)
-
-    pars  - an array with len(pars) = 4n, assuming I, sigma repeated
-    I     - amplitude
-    sigma - line widths
-    """
-    pars = pars.ravel()
-    if len(pars) % 2 == 0:
-        I = pars[::2]
-        sigma = pars[1::2]
-    elif not(len(I) == len(sigma)):
-        raise ValueError("Wrong array lengths! I: %i  sigma: %i " \
-                % (len(I), len(sigma)))
-
-    def g1d(x):
-        v = np.zeros_like(x)
-        for i in xrange(len(sigma)):
-            v += I[i] * exp( - 0.5 * (x / sigma[i])**2)
-        return v
-    return g1d
+#def n_centred_onedgaussian_Imax(pars, I=None, sigma=None):
+#    """
+#    Returns a function that provides the sum 
+#    over N 1D gaussians, where N is the length of
+#    I,sigma *OR* N = len(pars) / 2
+#
+#    The background "height" is assumed to be zero (you must "baseline" your
+#    spectrum before fitting)
+#
+#    pars  - an array with len(pars) = 4n, assuming I, sigma repeated
+#    I     - amplitude
+#    sigma - line widths
+#    """
+#    pars = pars.ravel()
+#    if len(pars) % 2 == 0:
+#        I = pars[::2]
+#        sigma = pars[1::2]
+#    elif not(len(I) == len(sigma)):
+#        raise ValueError("Wrong array lengths! I: %i  sigma: %i " \
+#                % (len(I), len(sigma)))
+#
+#    def g1d(x):
+#        v = np.zeros_like(x)
+#        for i in xrange(len(sigma)):
+#            v += I[i] * exp( - 0.5 * (x / sigma[i])**2)
+#        return v
+#    return g1d
 
 # ==========================================================================
 ## Returns a function which does the calculation, given a set of parameters
@@ -544,7 +544,7 @@ def multi_1dgauss_mpfit(xax, data, ngauss=1, err=None, params=None,
             print "GAUSS %02d: %8.3e  %8.3f"%(i+1, Ibestfit_params[i,0], Ibestfit_params[i,1])
 
         print "Chi2: ",newresult.fnorm," Reduced Chi2: ",newresult.fnorm/len(data)
-
+    
     resultMultiGaussian1D = BaseMultiGaussian1D(Ibestfit_params[:,0],Ibestfit_params[:,1])
 
     return resultMultiGaussian1D, newresult, resultMultiGaussian1D.evaluate(xax)

@@ -222,7 +222,7 @@ def DeprojectGaussian2D(Gaussian2D, geometry='oblate', euler_angles=None, inclin
           which includes imax3d, sig3d, qzx, qzy, psi, theta, phi
           Namely the amplitude, sigma, axis ratios and viewing angles
     """
-    from BaseMGE import MGEGaussian3D
+    from BaseMGE import BaseGaussian3D
 
     # Transferring the parameters for legibility
     imax2d = Gaussian2D.imax2d
@@ -358,7 +358,7 @@ def DeprojectGaussian2D(Gaussian2D, geometry='oblate', euler_angles=None, inclin
 	    imax3d = imax2d * q2d * sig2d \
                 / (np.sqrt(2. * np.pi * qzx * qzy) * sig3d)
 
-    return MGEGaussian3D(imax3d, sig3d, qzx, qzy, psi, theta, phi)
+    return BaseGaussian3D(imax3d, sig3d, qzx, qzy, psi, theta, phi)
 
 
 def _rotate_pa(sig2d, q2d, pa) :

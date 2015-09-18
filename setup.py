@@ -18,7 +18,7 @@ else:
 import os
 if os.path.exists('MANIFEST'):
     os.remove('MANIFEST')
-setup(name='pygme',
+setup(name='pygme2',
       version='0.0.2',
       description='PYthon Gaussian ModElling - Python MGE Tool',
       author='Eric Emsellem',
@@ -28,7 +28,7 @@ setup(name='pygme',
 #      requires=['pymodelfit'],
 #      requires=['openopt'],
       license='LICENSE',
-      packages=['pygme', 'pygme.binning', 'pygme.astroprofiles', 'pygme.fitting', 'pygme.utils', 'pygme.colormaps'],
-      package_dir={'pygme.astroprofiles': 'pygme/astroprofiles'},
-      package_data={'pygme.astroprofiles': ['data/*.dat']},
+      packages=['pygme2', 'pygme2.fitting'],
+#      package_dir={'pygme2.fitting': 'pygme2/fitting'},
+#      package_data={'pygme.astroprofiles': ['data/*.dat']},
      )

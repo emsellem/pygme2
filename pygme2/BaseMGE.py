@@ -42,6 +42,19 @@ __version__ = '0.0.2 (25 August 2014)'
 #
 # -----------------------------------------------------------
 
+def update_properties(func):
+    print "Updating..."
+    
+
+class MyList(list):
+    def __init__(self,type):
+        self.type = type
+    
+    @update_properties
+    def pop(self, index):
+        self.pop(index)
+    
+
 # ========================================
 # Gaussian 1D model
 # Inherited from astropy
@@ -102,15 +115,15 @@ class BaseMultiGaussian1D(object) :
         # As they are set to be views of the model3d.parameters array
         imax1d = np.atleast_1d(np.asarray(imax1d, dtype=np.float32))
 
-        n_gaussians = size(imax1d)
+        n_gaussians = np.size(imax1d)
         sig2d =  np.atleast_1d(np.asarray(sig1d, dtype=np.float32))
 
-        if any(sig1d == 0) :
-            print("ERROR: sigma's should be non-zeros")
+#        if any(sig1d == 0) :
+#            print("ERROR: sigma's should be non-zeros")
 
-        if not _check_consistency_size([imax1d, sig1d]) :
-            print("ERROR: not all input arrays (imax, sigma)"
-                  " have the same size")
+#        if not _check_consistency_size([imax1d, sig1d]) :
+#            print("ERROR: not all input arrays (imax, sigma)"
+#                  " have the same size")
 
         # All the following parameters have getters/setters
         # As they are set to be views of the model2d.parameters array
@@ -119,16 +132,20 @@ class BaseMultiGaussian1D(object) :
         self.model1d =  None
         for i in range(n_gaussians) :
             newmodel1d = BaseGaussian1D(imax1d[i],
-                    sig2d[i], xcentre1d[i])
-            if self.model2d is None :
-                self.model2d = newmodel1d
+                    sig1d[i], xcentre1d[i])
+            if self.model1d is None :
+                self.model1d = [newmodel1d]
             else :
-                self.model2d += newmodel1d
+                self.model1d.append(newmodel1d)
 
-        self.model1d.n_gaussians = n_gaussians
-
-    def evaluate(self, x, y) :
-        return self.model1d(x,y)
+    def evaluate(self, x) :
+        G1 = np.zeros(np.size(x))
+        for i in range(np.size(self.model1d)) :
+            G1 += self.model1d[i](x)
+        return G1
+    
+    def RemoveGaussian(self, index):
+        self.model1d.pop(index)
 
 
 # ========================================
@@ -214,7 +231,7 @@ class BaseMultiGaussian2D(object) :
         # As they are set to be views of the model3d.parameters array
         imax2d = np.atleast_1d(np.asarray(imax2d, dtype=np.float32))
 
-        n_gaussians = size(imax2d)
+        n_gaussians = np.size(imax2d)
         sig2d =  np.atleast_1d(np.asarray(sig2d, dtype=np.float32))
         q2d =  np.atleast_1d(np.asarray(q2d, dtype=np.float32))
 
@@ -236,14 +253,21 @@ class BaseMultiGaussian2D(object) :
             newmodel2d = BaseGaussian2D(imax2d[i],
                     sig2d[i], q2d[i], pa[i], xcentre2d[i], ycentre2d[i])
             if self.model2d is None :
-                self.model2d = newmodel2d
+                self.model2d = [newmodel2d]
             else :
-                self.model2d += newmodel2d
-
-        self.model2d.n_gaussians = n_gaussians
+                self.model2d.append(newmodel2d)
 
     def evaluate(self, x, y) :
-        return self.model2d(x,y)
+        G2 = np.zeros(np.size(x))
+        for i in range(np.size(self.model2d)) :
+            G2 += self.model2d[i](x,y)
+        return G2
+    
+    def RemoveGaussian(self, index):
+        self.model2d.pop(index)
+        
+    def AddGaussian(self, item):
+        self.model2d.append(item)
 
     def deproject(self, **kwargs) :
         """
@@ -264,9 +288,9 @@ class BaseMultiGaussian2D(object) :
         for model2d in self.model2d :
             newmodel3d = DeprojectGaussian2D(model2d, **kwargs)
             if model3d is None :
-                model3d = newmodel3d
+                model3d = [newmodel3d]
             else :
-                model3d += newmodel3d
+                model3d.append(newmodel3d)
 
         return model3d
 
@@ -318,9 +342,9 @@ class Gaussian3D(Model) :
         self.x_mean = x_mean
         self.y_mean = y_mean
         self.z_mean = z_mean
-        self.x_sttdev = x_sttdev
-        self.y_sttdev = y_sttdev
-        self.z_sttdev = z_sttdev
+        self.x_sttdev = x_stddev
+        self.y_sttdev = y_stddev
+        self.z_sttdev = z_stddev
         self.psi = psi
         self.theta = theta
         self.phi = phi
@@ -347,7 +371,7 @@ class Gaussian3D(Model) :
         M_euler.append(_rotation_matrix(phi_rad, 'z'))
         M_rot = reduce(np.dot, M_euler[::-1])
         # Then apply it on the coordinates
-        [xr, yr, zr] = M_rot.dot([x - xmean, y - ymean, z - z_mean])
+        [xr, yr, zr] = M_rot.dot([x - x_mean, y - y_mean, z - z_mean])
 
         return amplitude * np.exp(-0.5 * ((xr / x_stddev)**2 + 
                     (yr / y_stddev)**2 + (zr / z_stddev)**2))
@@ -453,7 +477,7 @@ class BaseMultiGaussian3D(object) :
         # As they are set to be views of the model3d.parameters array
         imax3d = np.atleast_1d(np.ndarray(imax3d, dtype=np.float32))
 
-        n_gaussians = size(imax3d)
+        n_gaussians = np.size(imax3d)
         sig3d = np.atleast_1d(np.ndarray(sig3d, dtype=np.float32))
         qzx = np.atleast_1d(np.ndarray(qzx, dtype=np.float32))
         qzy = np.atleast_1d(np.ndarray(qzy, dtype=np.float32))
@@ -474,18 +498,27 @@ class BaseMultiGaussian3D(object) :
 
         self.model3d = None
         for i in range(n_gaussians) :
-            newmodel3d = MGEGaussian3D(imax3d[i],
+            newmodel3d = BaseGaussian3D(imax3d[i],
                            sig3d[i], qzx[i], qzy[i], psi[i], theta[i], phi[i],
                            xcentre3d[i], ycentre3d[i], zcentre3d[i])
             if self.model3d is None :
-                self.model3d = newmodel3d
+                self.model3d = [newmodel3d]
             else :
-                self.model3d += newmodel3d
-
+                self.model3d.append(newmodel3d)
+        
         self.model3d.n_gaussians = n_gaussians
 
     def evaluate(self, x, y, z) :
-        return self.model3d(x, y, z)
+        G2 = np.zeros(np.size(x))
+        for i in range(np.size(self.model3d)) :
+            G2 += self.model3d[i](x,y,z)
+        return G2
+    
+    def RemoveGaussian(self, index):
+        self.model3d.pop(index)
+        
+    def AddGaussian(self, item):
+        self.model2d.append(item)
 
     def project(self, geometry='oblate', euler_angles=[0, 90., 0.]) :
         pass
@@ -510,7 +543,7 @@ def _read_resize_arg(arg, sizearray, defaultvalue, **kwargs) :
     variable: an array with size, sizearray
     """
     variable = kwargs.get(arg, np.zeros(sizearray, dtype=np.float32)+defaultvalue)
-    if size(variable) == 1 : return resize(variable, sizearray)
+    if np.size(variable) == 1 : return np.resize(variable, sizearray)
     else : return variable
 
 class BaseMGEModel(object) :
@@ -729,10 +762,11 @@ class BaseMGEModel(object) :
         return self._model2d
 
     @model2d.setter
-    def model2d(self, value) :
+    def model2d(self, value, deproj=True) :
         self._model2d = value
-        base3d = self._model2d.deproject(self.geometry, self.euler_angles)
-        self._model3d = base3d.model3d
+        if (deproj == True) :
+            base3d = self._model2d.deproject(self.geometry, self.euler_angles)
+            self._model3d = base3d.model3d
 
     @property
     def model3d(self) :
@@ -742,9 +776,10 @@ class BaseMGEModel(object) :
         return self._model3d
 
     @model3d.setter
-    def model3d(self, value) :
+    def model3d(self, value, proj=True) :
         self._model3d = value
-        base2d = self._model3d.project(self.geometry, self.euler_angles)
-        self._model2d = base2d.model2d
+        if (proj == True) :
+            base2d = self._model3d.project(self.geometry, self.euler_angles)
+            self._model2d = base2d.model2d
     # --------------------------------------------------
 

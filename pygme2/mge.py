@@ -15,6 +15,11 @@ __contact__   = " <eric.emsellem@eso.org>"
 
 # Importing Modules
 import numpy as np
+from rwcfor import floatMGE
+from mge_miscfunctions import print_msg
+import os
+
+from BaseMGE import BaseMGEModel, BaseGaussian2D, BaseGaussian3D, BaseMultiGaussian2D, BaseMultiGaussian3D
 
 try:
     import astropy as apy
@@ -26,7 +31,7 @@ except ImportError:
 
 __version__ = '0.0.1 (14 August 2014)'
 
-class MGEModel(BaseModel) :
+class MGEModel(BaseMGEModel) :
     """ MGE model 
 
     This class defines the basic MGE model, which should include both
@@ -62,7 +67,7 @@ class MGEModel(BaseModel) :
         self.n_gaussians = np.int(kwargs.get("n_Gaussians", 1))
 
         # Now setting the 2D / 3D Gaussians
-        BaseModel.__init__(self, **kwargs)
+        BaseMGEModel.__init__(self, **kwargs)
 
     # =================================================
     # Distance is a property which defines the scale
@@ -102,4 +107,184 @@ class MGEModel(BaseModel) :
 
         self._distance = value
     # --------------------------------------------------
+    
+    def _reset(self) :
+        self.n_gaussians = 0
+        self.euler_angles[0] = self.euler_angles[1] = self.euler_angles[2] = 0
+        self.model2d = None
+        self.model3d = None
 
+    ##################################################################
+    ### Write an ascii MGE file using an existing MGE class object ###
+    ##################################################################
+    def write_mge(self, outdir=None, outfilename=None, overwrite=False) :
+        if (outfilename is None) :                       # testing if the name was set
+            print 'You should specify an output file name'
+            return
+
+        if outdir is not None :
+            outfilename = outdir + outfilename
+
+        ## Testing if the file exists
+        if os.path.isfile(outfilename) :
+            if not overwrite : # testing if the existing file should be overwritten
+                print 'WRITING ERROR: File %s already exists, use overwrite=True if you wish' %outfilename
+                return
+
+        mgeout = open(outfilename, "w+")
+        ## Starting to write the output file
+        linecomment = "#######################################################\n"
+
+        def set_txtcomment(text, name, value, valform="%f") :
+            textout = "## %s \n"%(text)
+            return textout + name + " " + valform%(value)+"\n"
+
+        mgeout.write(linecomment + "## %s MGE model \n"%(outfilename) + linecomment)
+
+        ## Basic Parameters
+        mgeout.write(set_txtcomment("Distance [Mpc]", "DIST", self.distance, "%5.2f"))
+        mgeout.write(set_txtcomment("Euler Angles [Degrees]", "EULER", tuple(self.euler_angles), "%8.5f %8.5f %8.5f"))
+
+        ## Number of Gaussians
+        mgeout.write(set_txtcomment("Number of Gaussians", "NGAUSS", self.n_gaussians, "%d"))
+
+        ###################
+        ## 2D Gaussians
+        ###################
+        ## STARS First
+        mgeout.write("## No                  Imax   Sigma      Q      PA\n")
+        for i in range(self.n_gaussians) :
+            mgeout.write("GAUSS2D%02d   "%(i) + "%8.5e %8.5f %8.5f %8.5f \n"%(self.imax2d[i], self.sig2d[i], self.q2d[i], self.pa[i]))
+     
+        ###################
+        ## 3D Gaussians
+        ###################
+        mgeout.write("## ID                  Imax    Sigma       QxZ       QyZ   \n")
+        for i in range(self.n_gaussians) :
+            mgeout.write("GAUSS3D%02d   "%(i) + "%8.5e %8.5f %8.5f %8.5f \n"%(self.imax3d[i], self.sig3d[i], self.qzx[i], self.qzy[i]))
+
+        mgeout.close()
+#===================================================================================================================================
+
+    ##################################################################
+    ### Reading an ascii MGE file and filling the MGE class object ###
+    ##################################################################
+    def read_mge(self, infilename=None, indir=None) :
+
+        if (infilename is not None) :                       # testing if the name was set
+            if indir is not None :
+                infilename = indir + infilename
+
+            if not os.path.isfile(infilename) :          # testing the existence of the file
+                print 'OPENING ERROR: File %s not found' %infilename
+                return
+            
+            ## resets n_gaussians to 0 and model2d and model3d to None
+            self._reset()
+
+            ################################
+            # Opening the ascii input file #
+            ################################
+            self.pwd = os.getcwd()
+            self.fullMGEname = os.path.abspath(infilename)
+            self.MGEname = os.path.basename(self.fullMGEname)
+            self.pathMGEname = os.path.dirname(self.fullMGEname)
+
+            mge_file = open(self.fullMGEname)
+
+            lines = mge_file.readlines()
+            nlines = len(lines)
+
+            ########################################
+            ## First get the Number of gaussians  ##
+            ## And the global set of parameters   ##
+            ########################################
+      
+            for i in xrange(nlines) :
+                if lines[i][0] == "#" or lines[i] == "\n" :
+                    continue
+                sl = lines[i].split()
+                keyword = sl[0]
+                if (keyword[:6] == "NGAUSS") :
+                    nGauss = np.int(sl[1])
+                    self.n_gaussians(nGauss)
+                    keynGauss = 1
+                elif (keyword[:4] == "DIST") :
+                    Dist = floatMGE(sl[1])
+                    self.distance(Dist)
+             
+            tmpmodel2d = None
+            tmpmodel3d = None                         
+            ##================================================================================##
+            ## Then really decoding the lines and getting all the details from the ascii file ##
+            ##================================================================================##
+            for i in xrange(nlines) :
+                if (lines[i][0] == "#")  or (lines[i] == "\n") :
+                    continue
+                sl = lines[i].split()
+                keyword = sl[0]
+                if (keyword[:6] == "NGAUSS") or (keyword[:4] == "DIST"):
+                    continue
+                ## projected gaussians
+                elif (keyword[:11] == "GAUSS2D") :
+                    if (tmpmodel2d == None) :
+                        tmpmodel2d = BaseMultiGaussian2D(sl[1],sl[2],sl[3],pa=sl[4])
+                    else :
+                        tmpmodel2d.AddGaussian(BaseGaussian2D(sl[1],sl[2],sl[3],pa=sl[4]))
+                ## spacial gaussians
+                elif (keyword[:11] == "GAUSS3D") :
+                    if (tmpmodel3d == None) :
+                        tmpmodel3d = BaseMultiGaussian3D(sl[1],sl[2],sl[3],sl[4])
+                    else :
+                        tmpmodel3d.AddGaussian(BaseGaussian3D(sl[1],sl[2],sl[3],sl[4]))                   
+                ## Center and other parameters
+                elif (keyword[:5] == "EULER") :
+                    self.euler_angles = np.zeros((3,), floatMGE)
+                    self.euler_angles[0] = floatMGE(sl[1])
+                    self.euler_angles[1] = floatMGE(sl[2])
+                    self.euler_angles[2] = floatMGE(sl[3])
+                else :
+                    print 'Could not decode the following keyword: %s' %keyword
+                    mge_file.close
+                    break
+            ################################
+            # CLOSING the ascii input file #
+            ################################
+            mge_file.close
+
+            self.model2d(tmpmodel2d, deproj=False)
+            self.model3d(tmpmodel3d, proj=False)
+
+        # no name was specified #
+        else :
+            print 'You should specify an output file name'
+
+    #====================== END OF READING / INIT THE MGE INPUT FILE =======================#
+
+def create_mge(outfilename=None, overwrite=False, outdir=None, **kwargs) :
+    """Create an MGE ascii file corresponding to the input parameters
+    """
+    ## Setting a temporary MGE object
+    saveMGE = kwargs.get('saveMGE', None)
+    if saveMGE is None :
+        tempMGE = MGEModel(kwargs)
+    else :
+        tempMGE = MGEModel(saveMGE=saveMGE,kwargs)
+
+    ## Get the numbers from kwargs
+
+    found2D = found3D = 0
+    if kwargs.has_key('Gauss3D') :
+        tempMGE.model3d(kwargs.get('Gauss3D'))
+
+        found3D = 1
+        if kwargs.has_key('Gauss2D') :
+            print_msg("We will only use the 3D Gaussians here and will project them accordingly", 1)
+
+    elif kwargs.has_key('Gauss2D') :
+        tempMGE.model2d(kwargs.get('Gauss2D'));
+        found2D = 1
+
+    tempMGE.write_mge(outdir=outdir, outfilename=outfilename, overwrite=overwrite)
+
+    ###===============================================================
