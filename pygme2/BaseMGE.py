@@ -573,9 +573,22 @@ class BaseMGEModel(object) :
         qxy = kwargs.get("qxy", None)
         self._input_qzx, self._input_qzy, self._input_qxy = \
                 _check_3D_axisratios(qzx, qzy, qxy, verbose) 
+    
+        if kwargs.has_key('Gauss3D') :
+            self._model3d = (kwargs.get('Gauss3D')).model3d
+
+            if kwargs.has_key('Gauss2D') :
+                print "We will only use the 3D Gaussians here and will project them accordingly"
+
+        elif kwargs.has_key('Gauss2D') :
+            self._model2d = (kwargs.get('Gauss2D')).model2d
+            
+        else :
+            print "PROBLEM"
+
 
         # Getting the 2D model - Gaussians
-        self.model2d = BaseMultiGaussian2D(**kwargs).model2d
+        #self.model2d = BaseMultiGaussian2D(**kwargs).model2d
 
     # =================================================
     #                  2D model parameters
@@ -586,65 +599,65 @@ class BaseMGEModel(object) :
     def imax2d(self) :
         """Amplitudes of the 2D Gaussians
         """
-        return self.model2d.parameters[::6]
+        return self._model2d.parameters[::6]
 
     @imax2d.setter
     def imax2d(self, value) :
-         self.model2d.parameters[::6] = value
+         self._model2d.parameters[::6] = value
     # -------------------------------------
     @property 
     def sig2d(self) :
         """Amplitudes of the 2D Gaussians
         """
-        return self.model2d.parameters[1::6]
+        return self._model2d.parameters[1::6]
 
     @sig2d.setter
     def sig2d(self, value) :
-         self.model2d.parameters[1::6] = value
+         self._model2d.parameters[1::6] = value
     # -------------------------------------
 
     @property 
     def q2d(self) :
         """Amplitudes of the 2D Gaussians
         """
-        return self.model2d.parameters[2::6]
+        return self._model2d.parameters[2::6]
 
     @q2d.setter
     def q2d(self, value) :
-         self.model2d.parameters[2::6] = value
+         self._model2d.parameters[2::6] = value
     # -------------------------------------
 
     @property 
     def pa(self) :
         """Amplitudes of the 2D Gaussians
         """
-        return self.model2d.parameters[3::6]
+        return self._model2d.parameters[3::6]
 
     @pa.setter
     def pa(self, value) :
-         self.model2d.parameters[3::6] = value
+         self._model2d.parameters[3::6] = value
     # -------------------------------------
 
     @property 
     def xcentre2d(self) :
         """Amplitudes of the 2D Gaussians
         """
-        return self.model2d.parameters[4::6]
+        return self._model3d.parameters[4::6]
 
     @xcentre2d.setter
     def xcentre2d(self, value) :
-         self.model2d.parameters[4::6] = value
+         self._model3d.parameters[4::6] = value
     # -------------------------------------
 
     @property 
     def ycentre2d(self) :
         """Amplitudes of the 2D Gaussians
         """
-        return self.model2d.parameters[5::6]
+        return self._model3d.parameters[5::6]
 
     @ycentre2d.setter
     def ycentre2d(self, value) :
-         self.model2d.parameters[5::6] = value
+         self._model3d.parameters[5::6] = value
     # --------------------------------------------------
     # =================================================
     #               3D model parameters
@@ -656,91 +669,91 @@ class BaseMGEModel(object) :
     def imax3d(self) :
         """Amplitudes of the 3D Gaussians
         """
-        return self.model3d.parameters[::9]
+        return self._model3d.parameters[::9]
 
     @imax3d.setter
     def imax3d(self, value) :
-         self.model3d.parameters[::9] = value
+         self._model3d.parameters[::9] = value
     # -------------------------------------
     @property 
     def sig3d(self) :
         """Sigma of the 3D Gaussians
         """
-        return self.model3d.parameters[1::9]
+        return self._model3d.parameters[1::9]
 
     @sig3d.setter
     def sig3d(self, value) :
-         self.model3d.parameters[1::9] = value
+         self._model3d.parameters[1::9] = value
     # -------------------------------------
     @property 
     def qzx(self) :
         """Axis ratio (X/Y) of the 3D Gaussians
         """
-        return self.model3d.parameters[2::9]
+        return self._model3d.parameters[2::9]
 
     @qzx.setter
     def qzx(self, value) :
-         self.model3d.parameters[2::9] = value
+         self._model3d.parameters[2::9] = value
     # -------------------------------------
     @property 
     def qzy(self) :
         """Axis ratio (X/Z) of the 3D Gaussians
         """
-        return self.model3d.parameters[3::9]
+        return self._model3d.parameters[3::9]
 
     @qzy.setter
     def qzy(self, value) :
-         self.model3d.parameters[3::9] = value
+         self._model3d.parameters[3::9] = value
     # -------------------------------------
     @property 
     def pa(self) :
         """Position Angles of the 3D Gaussians
         """
-        return self.model3d.parameters[4::9]
+        return self._model3d.parameters[4::9]
 
     @pa.setter
     def pa(self, value) :
-         self.model3d.parameters[4::9] = value
+         self._model3d.parameters[4::9] = value
     # -------------------------------------
     @property 
     def phi(self) :
         """Angle Phi of the 3D Gaussians
         """
-        return self.model3d.parameters[5::9]
+        return self._model3d.parameters[5::9]
 
     @phi.setter
     def phi(self, value) :
-         self.model3d.parameters[5::9] = value
+         self._model3d.parameters[5::9] = value
     # -------------------------------------
     @property 
     def xcentre3d(self) :
         """Amplitudes of the 3D Gaussians
         """
-        return self.model3d.parameters[6::9]
+        return self._model3d.parameters[6::9]
 
     @xcentre3d.setter
     def xcentre3d(self, value) :
-         self.model3d.parameters[6::9] = value
+         self._model3d.parameters[6::9] = value
     # -------------------------------------
     @property 
     def ycentre3d(self) :
         """Amplitudes of the 3D Gaussians
         """
-        return self.model3d.parameters[7::9]
+        return self._model3d.parameters[7::9]
 
     @ycentre3d.setter
     def ycentre3d(self, value) :
-         self.model3d.parameters[7::9] = value
+         self._model3d.parameters[7::9] = value
     # -------------------------------------
     @property 
     def zcentre3d(self) :
         """Amplitudes of the 3D Gaussians
         """
-        return self.model3d.parameters[8::9]
+        return self._model3d.parameters[8::9]
 
     @zcentre3d.setter
     def zcentre3d(self, value) :
-         self.model3d.parameters[8::9] = value
+         self._model3d.parameters[8::9] = value
     # -------------------------------------
     @property
     def inclination(self) :
@@ -780,6 +793,6 @@ class BaseMGEModel(object) :
         self._model3d = value
         if (proj == True) :
             base2d = self._model3d.project(self.geometry, self.euler_angles)
-            self._model2d = base2d.model2d
+            self._model2d = base2d.model3d
     # --------------------------------------------------
 

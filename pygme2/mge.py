@@ -15,8 +15,8 @@ __contact__   = " <eric.emsellem@eso.org>"
 
 # Importing Modules
 import numpy as np
-from rwcfor import floatMGE
-from mge_miscfunctions import print_msg
+#from rwcfor import floatMGE
+#from mge_miscfunctions import print_msg
 import os
 
 from BaseMGE import BaseMGEModel, BaseGaussian2D, BaseGaussian3D, BaseMultiGaussian2D, BaseMultiGaussian3D
@@ -210,7 +210,7 @@ class MGEModel(BaseMGEModel) :
                     self.n_gaussians(nGauss)
                     keynGauss = 1
                 elif (keyword[:4] == "DIST") :
-                    Dist = floatMGE(sl[1])
+                    Dist = np.float32(sl[1])
                     self.distance(Dist)
              
             tmpmodel2d = None
@@ -239,10 +239,10 @@ class MGEModel(BaseMGEModel) :
                         tmpmodel3d.AddGaussian(BaseGaussian3D(sl[1],sl[2],sl[3],sl[4]))                   
                 ## Center and other parameters
                 elif (keyword[:5] == "EULER") :
-                    self.euler_angles = np.zeros((3,), floatMGE)
-                    self.euler_angles[0] = floatMGE(sl[1])
-                    self.euler_angles[1] = floatMGE(sl[2])
-                    self.euler_angles[2] = floatMGE(sl[3])
+                    self.euler_angles = np.zeros((3,), dtype=np.float32)
+                    self.euler_angles[0] = np.float32(sl[1])
+                    self.euler_angles[1] = np.float32(sl[2])
+                    self.euler_angles[2] = np.float32(sl[3])
                 else :
                     print 'Could not decode the following keyword: %s' %keyword
                     mge_file.close
@@ -265,25 +265,7 @@ def create_mge(outfilename=None, overwrite=False, outdir=None, **kwargs) :
     """Create an MGE ascii file corresponding to the input parameters
     """
     ## Setting a temporary MGE object
-    saveMGE = kwargs.get('saveMGE', None)
-    if saveMGE is None :
-        tempMGE = MGEModel(kwargs)
-    else :
-        tempMGE = MGEModel(saveMGE=saveMGE,kwargs)
-
-    ## Get the numbers from kwargs
-
-    found2D = found3D = 0
-    if kwargs.has_key('Gauss3D') :
-        tempMGE.model3d(kwargs.get('Gauss3D'))
-
-        found3D = 1
-        if kwargs.has_key('Gauss2D') :
-            print_msg("We will only use the 3D Gaussians here and will project them accordingly", 1)
-
-    elif kwargs.has_key('Gauss2D') :
-        tempMGE.model2d(kwargs.get('Gauss2D'));
-        found2D = 1
+    tempMGE = MGEModel(**kwargs)
 
     tempMGE.write_mge(outdir=outdir, outfilename=outfilename, overwrite=overwrite)
 
