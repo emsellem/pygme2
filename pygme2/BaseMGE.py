@@ -25,6 +25,11 @@ try:
 except ImportError:
     raise Exception("astropy is required for this module")
 
+try:
+    from scipy import special
+except ImportError:
+    raise Exception("scipy is required for pygme")
+
 from gaussian_projection import _rotation_matrix
 from gaussian_projection import _check_viewing_angles
 from gaussian_projection import _check_3D_axisratios
@@ -134,18 +139,25 @@ class BaseMultiGaussian1D(object) :
             newmodel1d = BaseGaussian1D(imax1d[i],
                     sig1d[i], xcentre1d[i])
             if self.model1d is None :
-                self.model1d = [newmodel1d]
+                self.model1d = newmodel1d
             else :
-                self.model1d.append(newmodel1d)
+                self.model1d += newmodel1d
 
     def evaluate(self, x) :
-        G1 = np.zeros(np.size(x))
-        for i in range(np.size(self.model1d)) :
-            G1 += self.model1d[i](x)
-        return G1
-    
+        return self.model1d(x)
+            
     def RemoveGaussian(self, index):
-        self.model1d.pop(index)
+        tmpmodel1d = None
+        for i in range(0,np.size(self.model1d)) :
+            if (i != index) :
+                if (tmpmodel1d is None) :
+                    tmpmodel1d = self.model1d[i]
+                else :
+                    tmpmodel1d += self.model1d[i]
+        self.model1d = tmpmodel1d
+        
+    def AddGaussian(self, item):
+        self.model1d += item
 
 
 # ========================================
@@ -253,21 +265,34 @@ class BaseMultiGaussian2D(object) :
             newmodel2d = BaseGaussian2D(imax2d[i],
                     sig2d[i], q2d[i], pa[i], xcentre2d[i], ycentre2d[i])
             if self.model2d is None :
-                self.model2d = [newmodel2d]
+                self.model2d = newmodel2d
             else :
-                self.model2d.append(newmodel2d)
+                self.model2d += newmodel2d
 
     def evaluate(self, x, y) :
-        G2 = np.zeros(np.size(x))
-        for i in range(np.size(self.model2d)) :
-            G2 += self.model2d[i](x,y)
-        return G2
+        return self.model2d(x,y)
+    
+    def evaluate_single(self, x, y, ind) :
+        return self.model2d[ind](x,y)
+    
+    def evaluate_list(self, x, y, ilist) :
+        tmp = np.zeros_like(x)
+        for i in ilist:
+            tmp += self.model2d[i](x, y, i)
+        return tmp
     
     def RemoveGaussian(self, index):
-        self.model2d.pop(index)
+        tmpmodel2d = None
+        for i in range(0,np.size(self.model2d)) :
+            if (i != index) :
+                if (tmpmodel2d is None) :
+                    tmpmodel2d = self.model2d[i]
+                else :
+                    tmpmodel2d += self.model2d[i]
+        self.model2d = tmpmodel2d
         
     def AddGaussian(self, item):
-        self.model2d.append(item)
+        self.model2d += item
 
     def deproject(self, **kwargs) :
         """
@@ -432,7 +457,7 @@ class BaseGaussian3D(Model) :
     @staticmethod
     def evaluate(x, y, z, imax3d, sig3d, qzx, qzy, 
             psi, theta, phi, xcentre3d, ycentre3d, zcentre3d) :
-        return astropy_models.Gaussian3D.evaluate(x, y, z, amplitude=imax3d, 
+        return Gaussian3D.evaluate(x, y, z, amplitude=imax3d, 
                 x_stddev=sig3d, y_stddev=sig3d * qzx / qzy, z_stddev=sig3d * qzx, 
                 psi=psi, theta=theta, phi=phi,
                 x_mean=xcentre3d, y_mean=ycentre3d, z_mean=zcentre3d)
@@ -502,23 +527,76 @@ class BaseMultiGaussian3D(object) :
                            sig3d[i], qzx[i], qzy[i], psi[i], theta[i], phi[i],
                            xcentre3d[i], ycentre3d[i], zcentre3d[i])
             if self.model3d is None :
-                self.model3d = [newmodel3d]
+                self.model3d = newmodel3d
             else :
-                self.model3d.append(newmodel3d)
+                self.model3d += newmodel3d
         
         self.model3d.n_gaussians = n_gaussians
 
     def evaluate(self, x, y, z) :
-        G2 = np.zeros(np.size(x))
-        for i in range(np.size(self.model3d)) :
-            G2 += self.model3d[i](x,y,z)
-        return G2
+        return self.model3d(x,y,z)
+
+    def evaluate_single(self, x, y, z, ind) :
+        return self.model3d[ind](x,y,z)
+    
+    def evaluate_axi_single(self, r, z, ind) :
+        x = np.sqrt(r^2/2)
+        y = x
+        return self.model3d[ind](x,y,z)
+    
+    def evaluate_list(self, x, y, z, ilist) :
+        tmp = np.zeros_like(x)
+        for i in ilist:
+            tmp += self.model3d[i](x, y, z, i)
+        return tmp
+    
+    def evaluate_axi_list(self, r, z, ilist) :
+        tmp = np.zeros_like(r)
+        for i in ilist:
+            tmp += self.evaluate_axi_single(r, z, i)
+        return tmp
+    
+    def integrate_axi_single(self, r, z, rcut=None, zcut=None, ind):
+        if zcut in None:
+            print "You need to specify zcut"
+            return
+        else :
+            if rcut is None :
+                return self.imax3d[ind] * self.qzx[ind] * np.sqrt(2.*np.pi) * self.sig3d[ind] * np.exp(- r*r / 2 / self.sig3d[ind]**2) \
+                    * np.float32(special.erf(zcut / np.sqrt(2) / self.sig3d[ind]))
+            else :
+                return self.imax3d[ind] * self.qzx[ind] * (np.sqrt(2.*np.pi) * self.sig3d[ind])**3 \
+                    * (1. - np.exp(- rcut*rcut/2/self.sig3d[ind]**2)) * np.float32(special.erf(zcut/np.sqrt(2)/self.sig3d[ind]))
+    
+    def integrate_axi_list(self, r, z, rcut=None, zcut=None, ilist):
+        G = 0.0
+        for i in ilist :
+            G += self.integrate_axi_single(r,z,rcut=rcut,zcut=zcut,i)
+        return G
+    
+    def integrate_sph_single(self, rcut, ind):
+        return self.imax3d[ind] * self.qzx * (np.sqrt(2.*np.pi) * self.sig3d[ind])**3 \
+            * (np.float32(special.erf(rcut / self.sig3d[ind])) - rcut * np.sqrt(2. / np.pi) \
+            * np.exp(- rcut*rcut/2/self.sig3d[ind]**2)/ self.sig3d[ind])
+    
+    def integrate_sph_list(self, rcut, ilist):
+        tmp = 0.0
+        for i in list :
+            tmp += self.integrate_sph_single(rcut,i)
+        return tmp
     
     def RemoveGaussian(self, index):
-        self.model3d.pop(index)
+        tmpmodel3d = None
+        for i in range(0,np.size(self.model3d)) :
+            if (i != index) :
+                if (tmpmodel3d is None) :
+                    tmpmodel3d = self.model3d[i]
+                else :
+                    tmpmodel3d += self.model3d[i]
+        self.model3d = tmpmodel3d
         
     def AddGaussian(self, item):
-        self.model2d.append(item)
+        self.model3d += item
 
     def project(self, geometry='oblate', euler_angles=[0, 90., 0.]) :
         pass
@@ -573,20 +651,20 @@ class BaseMGEModel(object) :
         qxy = kwargs.get("qxy", None)
         self._input_qzx, self._input_qzy, self._input_qxy = \
                 _check_3D_axisratios(qzx, qzy, qxy, verbose) 
-    
+        
         if kwargs.has_key('Gauss3D') :
-            self._model3d = (kwargs.get('Gauss3D')).model3d
+            self.model3d = (kwargs.get('Gauss3D')).model3d
 
             if kwargs.has_key('Gauss2D') :
                 print "We will only use the 3D Gaussians here and will project them accordingly"
 
         elif kwargs.has_key('Gauss2D') :
-            self._model2d = (kwargs.get('Gauss2D')).model2d
+            self.model2d = (kwargs.get('Gauss2D')).model2d
             
         else :
-            print "PROBLEM"
-
-
+            print "you need to specify either Gauss2D or Gauss3D"
+            return
+        
         # Getting the 2D model - Gaussians
         #self.model2d = BaseMultiGaussian2D(**kwargs).model2d
 
@@ -775,11 +853,10 @@ class BaseMGEModel(object) :
         return self._model2d
 
     @model2d.setter
-    def model2d(self, value, deproj=True) :
+    def model2d(self, value) :
         self._model2d = value
-        if (deproj == True) :
-            base3d = self._model2d.deproject(self.geometry, self.euler_angles)
-            self._model3d = base3d.model3d
+        base3d = self._model2d.deproject(self.geometry, self.euler_angles)
+        self._model3d = base3d.model3d
 
     @property
     def model3d(self) :
@@ -789,10 +866,9 @@ class BaseMGEModel(object) :
         return self._model3d
 
     @model3d.setter
-    def model3d(self, value, proj=True) :
+    def model3d(self, value) :
         self._model3d = value
-        if (proj == True) :
-            base2d = self._model3d.project(self.geometry, self.euler_angles)
-            self._model2d = base2d.model3d
+        base2d = self._model3d.project(self.geometry, self.euler_angles)
+        self._model2d = base2d.model3d
     # --------------------------------------------------
 

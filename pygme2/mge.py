@@ -21,6 +21,7 @@ import os
 
 from BaseMGE import BaseMGEModel, BaseGaussian2D, BaseGaussian3D, BaseMultiGaussian2D, BaseMultiGaussian3D
 
+
 try:
     import astropy as apy
     from astropy.modeling import models as astropy_models
@@ -39,7 +40,7 @@ class MGEModel(BaseMGEModel) :
     associated 3D Gaussians, using the viewing Euler Angles
     """
 
-    def __init__(self, **kwargs) :
+    def __init__(self, infilename=None, indir=None, **kwargs) :
         """Initialise the MGE model
         """
 
@@ -65,9 +66,17 @@ class MGEModel(BaseMGEModel) :
 
         # Input Parameters
         self.n_gaussians = np.int(kwargs.get("n_Gaussians", 1))
-
+        
         # Now setting the 2D / 3D Gaussians
         BaseMGEModel.__init__(self, **kwargs)
+        
+        self.init_BasePhotModel()
+        
+        if infilename is not None :
+            self.read_mge(infilename=infilename, indir=indir)
+        else :
+            print "you need to specify infilename"
+            return
 
     # =================================================
     # Distance is a property which defines the scale
@@ -213,8 +222,15 @@ class MGEModel(BaseMGEModel) :
                     Dist = np.float32(sl[1])
                     self.distance(Dist)
              
-            tmpmodel2d = None
-            tmpmodel3d = None                         
+            tmpimax2d = [0.0]
+            tmpsig2d = [0.0]
+            tmpq2d = [0.0]
+            tmppa = [0.0]
+            
+            tmpimax3d = [0.0] 
+            tmpsig3d = [0.0]   
+            tmpqzx = [0.0]   
+            tmpqzy = [0.0]                           
             ##================================================================================##
             ## Then really decoding the lines and getting all the details from the ascii file ##
             ##================================================================================##
@@ -227,16 +243,16 @@ class MGEModel(BaseMGEModel) :
                     continue
                 ## projected gaussians
                 elif (keyword[:11] == "GAUSS2D") :
-                    if (tmpmodel2d == None) :
-                        tmpmodel2d = BaseMultiGaussian2D(sl[1],sl[2],sl[3],pa=sl[4])
-                    else :
-                        tmpmodel2d.AddGaussian(BaseGaussian2D(sl[1],sl[2],sl[3],pa=sl[4]))
+                    tmpimax2d.append(sl[1])
+                    tmpsig2d.append(sl[2])
+                    tmpq2d.append(sl[3])
+                    tmppa.append(sl[4])
                 ## spacial gaussians
-                elif (keyword[:11] == "GAUSS3D") :
-                    if (tmpmodel3d == None) :
-                        tmpmodel3d = BaseMultiGaussian3D(sl[1],sl[2],sl[3],sl[4])
-                    else :
-                        tmpmodel3d.AddGaussian(BaseGaussian3D(sl[1],sl[2],sl[3],sl[4]))                   
+                elif (keyword[:11] == "GAUSS3D") :  
+                    tmpimax3d.append(sl[1])
+                    tmpsig3d.append(sl[2])
+                    tmpqzx.append(sl[3])
+                    tmpqzy.append(sl[4])              
                 ## Center and other parameters
                 elif (keyword[:5] == "EULER") :
                     self.euler_angles = np.zeros((3,), dtype=np.float32)
@@ -252,9 +268,19 @@ class MGEModel(BaseMGEModel) :
             ################################
             mge_file.close
 
-            self.model2d(tmpmodel2d, deproj=False)
-            self.model3d(tmpmodel3d, proj=False)
-
+            tmpimax2d.pop(0)
+            tmpsig2d.pop(0)
+            tmpq2d.pop(0)
+            tmppa.pop(0) 
+        
+            tmpimax3d.pop(0)
+            tmpsig3d.pop(0)
+            tmpqzx.pop(0)
+            tmpqzy.pop(0)
+            
+            tmpmodel2d = BaseMultiGaussian2D(tmpimax2d,tmpsig2d,tmpq2d,pa=tmppa)
+            self.model2d = tmpmodel2d
+        
         # no name was specified #
         else :
             print 'You should specify an output file name'
@@ -264,9 +290,9 @@ class MGEModel(BaseMGEModel) :
 def create_mge(outfilename=None, overwrite=False, outdir=None, **kwargs) :
     """Create an MGE ascii file corresponding to the input parameters
     """
-    ## Setting a temporary MGE object
-    tempMGE = MGEModel(**kwargs)
-
-    tempMGE.write_mge(outdir=outdir, outfilename=outfilename, overwrite=overwrite)
-
+    
+    tmpMGE = MGEModel(**kwargs)
+    
+    tmpMGE.write_mge(outfilename,overwrite,outdir)
+        
     ###===============================================================
