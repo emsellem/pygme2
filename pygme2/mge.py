@@ -15,12 +15,14 @@ __contact__   = " <eric.emsellem@eso.org>"
 
 # Importing Modules
 import numpy as np
-#from rwcfor import floatMGE
+
+#from rwcfor import np.float32
 #from mge_miscfunctions import print_msg
 import os
 
-from BaseMGE import BaseMGEModel, BaseGaussian2D, BaseGaussian3D, BaseMultiGaussian2D, BaseMultiGaussian3D
-
+from BaseMGE import BaseMGEModel, BaseMultiGaussian2D
+from dynMGE import dynMGE
+from paramMGE import dynParamMGE, photParamMGE, paramMGE
 
 try:
     import astropy as apy
@@ -32,7 +34,7 @@ except ImportError:
 
 __version__ = '0.0.1 (14 August 2014)'
 
-class MGEModel(BaseMGEModel) :
+class MGEModel(BaseMGEModel, dynMGE, paramMGE) :
     """ MGE model 
 
     This class defines the basic MGE model, which should include both
@@ -47,11 +49,6 @@ class MGEModel(BaseMGEModel) :
         # General verbose parameter for the MGE model
         self.verbose = kwargs.get("verbose", False)
 
-        # Truncation Method = Default is Ellipsoid, (can also be Cylindre)
-        self.truncation_method = kwargs.get("truncation_method", "Ellipsoid")   
-        # Default Truncation radius in parsec
-        self.mcut = kwargs.get("mcut", 50000.)
-
         # Initial value for the Gravitational Constant
         # G is in (km/s)2. Msun-1 . pc .
         self.GGRAV = constants.G.to(units.km**2 * units.pc 
@@ -59,18 +56,17 @@ class MGEModel(BaseMGEModel) :
         # Distance of the model in parsec
         self.distance = kwargs.get("distance", 1.0e6)
 
-        # Viewing angles in degrees
-        # Second value is inclination for axisymmetric systems
-        # 90 degrees inclination means edge-on view
-        self.euler_angles = kwargs.get("euler_angles", np.array([0., 90., 0.]))
-
         # Input Parameters
         self.n_gaussians = np.int(kwargs.get("n_Gaussians", 1))
         
         # Now setting the 2D / 3D Gaussians
         BaseMGEModel.__init__(self, **kwargs)
         
-        self.init_BasePhotModel()
+        # add the additional parameters
+        self._add_Parameters()
+        
+        # setting up the dynamical model
+        dynMGE.__init__(self)
         
         if infilename is not None :
             self.read_mge(infilename=infilename, indir=indir)
@@ -117,11 +113,14 @@ class MGEModel(BaseMGEModel) :
         self._distance = value
     # --------------------------------------------------
     
+    def getVescpae(self, R, Z, ilist=None):
+        self.Vescape(R, Z, ilist)
+    
     def _reset(self) :
         self.n_gaussians = 0
         self.euler_angles[0] = self.euler_angles[1] = self.euler_angles[2] = 0
-        self.model2d = None
-        self.model3d = None
+        self._model2d = None
+        self._model3d = None
 
     ##################################################################
     ### Write an ascii MGE file using an existing MGE class object ###
@@ -168,7 +167,7 @@ class MGEModel(BaseMGEModel) :
         ###################
         ## 3D Gaussians
         ###################
-        mgeout.write("## ID                  Imax    Sigma       QxZ       QyZ   \n")
+        mgeout.write("## ID                  Imax    Sigma       qzx       QyZ   \n")
         for i in range(self.n_gaussians) :
             mgeout.write("GAUSS3D%02d   "%(i) + "%8.5e %8.5f %8.5f %8.5f \n"%(self.imax3d[i], self.sig3d[i], self.qzx[i], self.qzy[i]))
 
@@ -286,6 +285,109 @@ class MGEModel(BaseMGEModel) :
             print 'You should specify an output file name'
 
     #====================== END OF READING / INIT THE MGE INPUT FILE =======================#
+    
+    #####################################
+    ## Adding more Gaussian parameters ##
+    #####################################
+    def _add_Parameters(self) :
+        """
+        Add many more parameters using the basic I, Sig, q, PA parameters of the model
+        These parameters are important for many (photometry/dynamics-related) routines
+        """
+
+        ## Only if axisymmetric
+        if self.axi :
+
+            ##################################################################
+            ## Compute some useful parameters for the projected Gaussians
+            ##################################################################
+            if  (self._model2d is not None) :
+                # some useful numbers from the projected gaussians if they exist
+                #!TODO sigma units??? 
+                self.sig2dpc =  self.sig2d * self._pc_per_arcsec        # Sigma in pc
+                self.q2d2 = self.q2d * self.q2d
+                self.sig2d2 = self.sig2d * self.sig2d  # Projected Sigma in arcsecond
+                self.dsig2d2 = 2. * self.sig2d2
+                self.Pp = self.imax2d * self.ML      # Mass maximum in Mass/pc-2
+                self.MGEFluxp = self.imax2d*(self.sig2dpc**2) * self.q2d2 * np.pi
+
+            ##################################################################
+            ## Compute some useful parameters for the Spatial Gaussians
+            ##################################################################
+            if (self._model3d is not None):
+                # some more useful numbers
+                #!TODO sigma and imax units??? 
+                self.imax3dpc = self.imax3d / self._pc_per_arcsec  # I in Lum.pc-3
+                self.sig3dpc =  self.sig3d * self._pc_per_arcsec # Sigma in pc
+                #!TODO imax3dpc???
+                self.Parc = self.imax3d * self.ML  # Mass maximum in Mass/pc-2/arcsec-1
+                self.qzx2 = self.qzx ** 2
+                self.e2 = 1. - self.qzx2
+                self.sig3d2 = self.sig3d**2           # Sigma in arcsecond !
+                self.qsig3d = self.qzx * self.sig3d
+
+                ## Add photometric parameters
+                self._pParam = photParamMGE(self)
+                ## Add dynamics parameters
+                self._dParam = dynParamMGE(self)
+
+                ## Fluxes and Masses
+                self.MGEFlux = self.imax3dpc * self.qzx * (np.sqrt(2.*np.pi) * self.sig3dpc)**3
+                self.MGEMass = self.MGEFlux * self.ML
+
+#                 ## Total Mass and Flux for Stars and Gas and Halo (not truncated)
+#                 self.MGEStarMass = np.sum(self.MGEMass[:self.nStarGauss],axis=0)
+#                 self.MGEStarFlux = np.sum(self.MGEFlux[:self.nStarGauss],axis=0)
+#                 self.MGEGasMass = np.sum(self.MGEMass[self.nStarGauss:self.nStarGauss+self.nGasGauss],axis=0)
+#                 self.MGEGasFlux = np.sum(self.MGEFlux[self.nStarGauss:self.nStarGauss+self.nGasGauss],axis=0)
+#                 self.MGEHaloMass = np.sum(self.MGEMass[self.nStarGauss+self.nGasGauss:self.nStarGauss+self.nGasGauss+self.nHaloGauss],axis=0)
+#                 self.MGEHaloFlux = np.sum(self.MGEFlux[self.nStarGauss+self.nGasGauss:self.nStarGauss+self.nGasGauss+self.nHaloGauss],axis=0)
+#                 ## Total Mass and Flux for all
+#                 self.TMGEFlux = np.sum(self.MGEFlux,axis=0)
+#                 self.TMGEMass = np.sum(self.MGEMass,axis=0)
+# 
+#                 self.facMbh = self.Mbh / (4. * np.pi * self._pc_per_arcsec * self._pc_per_arcsec)  # in M*pc-2*arcsec2
+# 
+#                 ## TRUNCATED Mass and Flux for each Gaussian
+#                 self.truncMass = np.zeros(self.nGauss, np.float32)
+#                 self.truncFlux = np.zeros(self.nGauss, np.float32)
+#                 if self.TruncationMethod == "Cylindre" :
+#                     for i in range(self.nGauss) :
+#                         self.truncFlux[i] = self.rhointL_1G(self.Rcutarc, self.Zcutarc, i)
+#                         self.truncMass[i] = self.rhointM_1G(self.Rcutarc, self.Zcutarc, i)
+#                 elif  self.TruncationMethod == "Ellipsoid" :
+#                     for i in range(self.nGauss) :
+#                         self.truncFlux[i] = self.rhoSphereintL_1G(self.mcutarc, i)
+#                         self.truncMass[i] = self.rhoSphereintM_1G(self.mcutarc, i)
+#                 ## Total TRUNCATED Flux and Mass
+#                 self.TtruncFlux = np.sum(self.truncFlux,axis=0)
+#                 self.TtruncMass = np.sum(self.truncMass,axis=0)
+# 
+#                 # Listing the Gaussians in the Groups
+#                 self._listGroups()
+#                 self._listDynComps()
+# 
+#                 ## Total Mass and Flux for Groups TRUNCATED!
+#                 self.truncGroupMass = np.zeros(self.nGroup, np.float32)
+#                 self.truncGroupFlux = np.zeros(self.nGroup, np.float32)
+#                 for i in range(self.nGroup) :
+#                     self.truncGroupMass[i] = np.sum(self.truncMass[self.listGaussGroup[i]], axis=0)
+#                     self.truncGroupFlux[i] = np.sum(self.truncFlux[self.listGaussGroup[i]], axis=0)
+#                 ## Total TRUNCATED Flux and Mass for STARS, GAS, HALO
+#                 ## STARS
+#                 self.truncStarFlux = np.sum(self.truncFlux[0: self.nStarGauss])
+#                 self.truncStarMass = np.sum(self.truncMass[0: self.nStarGauss])
+#                 ## GAS
+#                 self.truncGasFlux = np.sum(self.truncFlux[self.nStarGauss:self.nStarGauss + self.nGasGauss])
+#                 self.truncGasMass = np.sum(self.truncMass[self.nStarGauss:self.nStarGauss + self.nGasGauss])
+#                 ## HALO
+#                 self.truncHaloFlux = np.sum(self.truncFlux[self.nStarGauss + self.nGasGauss:self.nStarGauss + self.nGasGauss + self.nHaloGauss])
+#                 self.truncHaloMass = np.sum(self.truncMass[self.nStarGauss + self.nGasGauss:self.nStarGauss + self.nGasGauss + self.nHaloGauss])
+
+        else :
+            print "Triaxial model, cannot compute additional photometric parameters"
+
+    ## ===========================================================================================================
 
 def create_mge(outfilename=None, overwrite=False, outdir=None, **kwargs) :
     """Create an MGE ascii file corresponding to the input parameters
